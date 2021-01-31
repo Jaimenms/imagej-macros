@@ -55,11 +55,13 @@ bulkslice = 1;
 Dialog.create("Adjust the parameters");
 Dialog.addNumber("Porosity Threshold:", 0.99);
 Dialog.addNumber("Number of samples:", 10);
-Dialog.addNumber("Suport slice:", suportslice);
-Dialog.addNumber("Last Bulk slice:", bulkslice);
+Dialog.addNumber("Support thickness (cm):", 0.001);
+Dialog.addNumber("First slice:", suportslice);
+Dialog.addNumber("Last slice:", bulkslice);
 Dialog.show();
 porosity_threshold = Dialog.getNumber();
 n = Dialog.getNumber();
+support_th = Dialog.getNumber();
 suportslice = Dialog.getNumber();
 bulkslice = Dialog.getNumber();
 
@@ -91,7 +93,6 @@ searchValue_1 = 255;
 
 countValue_all_0 = 0;
 countValue_all_1 = 0;
-
 
 // Defining position sets
 setSlice(suportslice);
@@ -127,15 +128,16 @@ for( ix = 1; ix <= n; ix++ ) {
 
 		makeRectangle(ix_ini, iy_ini, ix_fini-ix_ini, iy_fini-iy_ini);
 
+		z_th_ini = 0.0;
+		z_th_fini = 0.0;
 		z_ini = 0.0;
 		z_fini = 0.0;
 		z = 0.0;
 		transitions = 0;
 
-		// position: 0 for under biofilm, 1 for in biofilm and 2 for over biofilm
-		position = 0;
+		// position: -1 for under biofilm, 0 for at support, 1 for in biofilm and 2 for over biofilm
+		position = -1;
 		
-
         countValue_all_0 = 0;
         countValue_all_1 = 0;
         
@@ -159,24 +161,37 @@ for( ix = 1; ix <= n; ix++ ) {
 
 	        slice_porosity = countValue_0/(countValue_0+countValue_1);
 
-			if( ( position == 0 ) & ( slice_porosity < porosity_threshold ) ){
+
+			// Support starter identifier
+			if( ( position == -1 ) & ( slice_porosity < porosity_threshold ) ){
+
+				position = 0;
+				z_th_ini = z;
+				transitions += 1;
+
+			}
+
+			// Membrane starter identifier
+			if( ( position == 0 ) & ( ( z - z_th_ini ) >= support_th ) ){
 				position = 1;
+				z_th_fini = z;
 				z_ini = z;
 				transitions += 1;
+			}
+
+			// Biofilm identifier
+			if( ( position == 1 ) & ( slice_porosity >= porosity_threshold ) ){
+				position = 2;
+				z_fini = z;
+		        countValue_buffer_0 = 0;
+		        countValue_buffer_1 = 0;
+				transitions += 1;
 			}else {
-				if( ( position == 1 ) & ( slice_porosity >= porosity_threshold ) ){
-					position = 2;
-					z_fini = z;
-			        countValue_buffer_0 = 0;
-			        countValue_buffer_1 = 0;
+				if( ( position == 2 ) & ( slice_porosity < porosity_threshold ) ){
+					position = 1;
+					countValue_all_0 += countValue_buffer_0;
+					countValue_all_1 += countValue_buffer_1;
 					transitions += 1;
-				}else {
-					if( ( position == 2 ) & ( slice_porosity < porosity_threshold ) ){
-						position = 1;
-						countValue_all_0 += countValue_buffer_0;
-						countValue_all_1 += countValue_buffer_1;
-						transitions += 1;
-					}
 				}
 			}
 
@@ -201,23 +216,32 @@ for( ix = 1; ix <= n; ix++ ) {
 
 		}
 
+		local_porosity = 1 ;
+		
 		if ( (countValue_all_0+countValue_all_1)>0 ){
 			
 			local_porosity = countValue_all_0/(countValue_all_0+countValue_all_1);
-	
-	        thickness = z_fini - z_ini;
-	
-			thickness_array = Array.concat(thickness_array,thickness);
-			porosity_array = Array.concat(porosity_array,local_porosity);
-			v0_array = Array.concat(v0_array,countValue_all_0);
-			v1_array = Array.concat(v1_array,countValue_all_1);
-			transitions_array = Array.concat(transitions_array,transitions);
-	
-			x_array = Array.concat(x_array,pw*(ix_ini+ix_fini)*0.5);
-			y_array = Array.concat(y_array,ph*(iy_ini+iy_fini)*0.5);
-	
-			print(f,j+"\t"+ix+"\t"+iy+"\t"+z_ini+"\t"+z_fini+"\t"+local_porosity+"\t"+thickness+"\t"+transitions); 
+
 		}
+	
+        thickness = z_fini - z_ini;
+
+		thickness_array = Array.concat(thickness_array,thickness);
+		porosity_array = Array.concat(porosity_array,local_porosity);
+		v0_array = Array.concat(v0_array,countValue_all_0);
+		v1_array = Array.concat(v1_array,countValue_all_1);
+		transitions_array = Array.concat(transitions_array,transitions);
+
+		x_array = Array.concat(x_array,pw*(ix_ini+ix_fini)*0.5);
+		y_array = Array.concat(y_array,ph*(iy_ini+iy_fini)*0.5);
+
+		z_ini_array = Array.concat(z_ini_array,z_ini);
+		z_fini_array = Array.concat(z_fini_array,z_fini);
+		z_th_ini_array = Array.concat(z_th_ini_array,z_th_ini);
+		z_th_fini_array = Array.concat(z_th_fini_array,z_th_fini);
+
+		print(f,j+"\t"+ix+"\t"+iy+"\t"+z_ini+"\t"+z_fini+"\t"+local_porosity+"\t"+thickness+"\t"+transitions); 
+
 	}
 }
 saveAs("Text", "biofilm_data_" + k + ".csv");
@@ -226,6 +250,7 @@ Array.getStatistics(x_array, x_min, x_max, x_mean, x_stdDev);
 Array.getStatistics(y_array, y_min, y_max, y_mean, y_stdDev);
 Array.getStatistics(thickness_array, thickness_min, thickness_max, thickness_mean, thickness_stdDev);
 Array.getStatistics(porosity_array, porosity_min, porosity_max, porosity_mean, porosity_stdDev);
+Array.getStatistics(z_fini_array, z_fini_min, z_fini_max, z_fini_mean, z_fini_stdDev);
 
 total_number_points = j
 
@@ -358,7 +383,7 @@ run("Stack to Hyperstack...", "slices=&numSlices frames=1")
 
 
 requires("1.52f");
-name = "Thickness profiles 3 (#" + k + ")";
+name = "Thickness profiles 1 (#" + k + ")";
 Plot.create(name, "Width ("+unit+")", "Thickness ("+unit+")");
 Plot.setColor("black");
 numSlices = 0;
@@ -384,7 +409,7 @@ run("Stack to Hyperstack...", "slices=&numSlices frames=1")
 
 
 requires("1.52f");
-name = "Thickness profiles 4 (#" + k + ")
+name = "Thickness profiles 2 (#" + k + ")
 Plot.create(name, "Length ("+unit+")", "Thickness ("+unit+")");
 Plot.setColor("black");
 numSlices = 0;
@@ -409,5 +434,37 @@ rename(name);
 run("Stack to Hyperstack...", "slices=&numSlices frames=1")	
 
 
+requires("1.52f");
+name = "Structure profiles (#" + k + ")
+Plot.create(name, "Length ("+unit+")", "z ("+unit+")");
+Plot.setColor("black");
+numSlices = 0;
+for(i=0;i<x_set.length;i++){
+	numSlices += 1;
+	x_aux = newArray(0);
+	y1_aux = newArray(0);
+	y2_aux = newArray(0);
+	y3_aux = newArray(0);
+	for(j=0;j<thickness_array.length;j++){
+	    if ( x_array[j] == x_set[i] ){
+	    	x_aux = Array.concat(x_aux,y_array[j]);
+	    	y1_aux = Array.concat(y1_aux,z_th_ini_array[j]);
+	    	y2_aux = Array.concat(y2_aux,z_th_fini_array[j]);
+	    	y3_aux = Array.concat(y3_aux,z_fini_array[j]);
+	    }
+	}
+	Plot.setColor("blue", "#ccccff");
+	Plot.add("filled", x_aux, y3_aux);
+	Plot.setColor("black", "#D3D3D3");
+	Plot.add("filled", x_aux, y2_aux);
+	Plot.setColor("black", "#ffffff");
+	Plot.add("filled", x_aux, y1_aux);
+	Plot.setLimits(y_min, y_max, 0, z_fini_max+0.05*z_fini_mean);
+	Plot.setXYLabels("Length ("+unit+")", "z ("+unit+")"+" for width " + d2s(x_set[i], 5) + " " + unit);
+	Plot.appendToStack;
+}
+Plot.show();
+rename(name);
+run("Stack to Hyperstack...", "slices=&numSlices frames=1")	
 
 print("Analysis process concluded");
